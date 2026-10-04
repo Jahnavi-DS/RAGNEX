@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 
 export type CorpusDocument = {
   docId: string;
@@ -119,13 +120,39 @@ export function loadCorpusDocuments(filePath = DEFAULT_CORPUS_PATH): CorpusDocum
   return documents;
 }
 
-export function chunkDocument(
+export async function* iterateCorpusDocuments(
+  filePath = DEFAULT_CORPUS_PATH,
+): AsyncGenerator<CorpusDocument> {
+  const lines = createInterface({
+    input: fs.createReadStream(filePath),
+    crlfDelay: Infinity,
+  });
+  const seenIds = new Set<string>();
+  let lineNumber = 0;
+
+  for await (const line of lines) {
+    lineNumber++;
+    if (!line.trim()) continue;
+
+    let value: unknown;
+    try {
+      value = JSON.parse(line) as unknown;
+    } catch {
+      throw new Error(`Corpus line ${lineNumber} is not valid JSON.`);
+    }
+    const document = parseDocument(value, lineNumber);
+    if (seenIds.has(document.docId)) throw new Error(`Duplicate corpus doc_id: ${document.docId}.`);
+    seenIds.add(document.docId);
+    yield document;
+  }
+}
+
+export function* iterateDocumentChunks(
   document: CorpusDocument,
   chunkSize = DEFAULT_CHUNK_SIZE,
   overlap = DEFAULT_CHUNK_OVERLAP,
-): CorpusChunk[] {
+): Generator<CorpusChunk> {
   if (chunkSize <= overlap || overlap < 0) throw new Error("Chunk overlap must be smaller than chunk size.");
-  const chunks: CorpusChunk[] = [];
   let start = 0;
   let chunkIndex = 0;
   while (start < document.text.length) {
@@ -136,20 +163,27 @@ export function chunkDocument(
     const end = Math.max(boundary, start + 1);
     const text = document.text.slice(start, end).trim();
     if (text) {
-      chunks.push({
+      yield {
         chunkId: `${document.docId}#chunk-${chunkIndex}`,
         docId: document.docId,
         chunkIndex,
         text,
         startChar: start,
         endChar: end,
-      });
+      };
       chunkIndex++;
     }
     if (end >= document.text.length) break;
     start = Math.max(end - overlap, start + 1);
   }
-  return chunks;
+}
+
+export function chunkDocument(
+  document: CorpusDocument,
+  chunkSize = DEFAULT_CHUNK_SIZE,
+  overlap = DEFAULT_CHUNK_OVERLAP,
+): CorpusChunk[] {
+  return [...iterateDocumentChunks(document, chunkSize, overlap)];
 }
 
 export function prepareEmbeddingInputs(chunks: CorpusChunk[]): EmbeddingInput[] {

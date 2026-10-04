@@ -1,4 +1,9 @@
-import { chunkDocument, loadCorpusDocuments, type CorpusChunk, type CorpusDocument } from "@/server/ingestion/corpus";
+import {
+  iterateCorpusDocuments,
+  iterateDocumentChunks,
+  type CorpusChunk,
+  type CorpusDocument,
+} from "@/server/ingestion/corpus";
 import type { DocumentRetriever, RetrievalOutcome, RetrievedDocument } from "./types";
 
 const STOPWORDS = new Set([
@@ -16,53 +21,54 @@ function tokenize(text: string): string[] {
     .filter((term) => term.length > 2 && !STOPWORDS.has(term));
 }
 
-type IndexedChunk = CorpusChunk & { document: CorpusDocument; terms: Set<string> };
+type ScoredChunk = CorpusChunk & { document: CorpusDocument; score: number };
 
-function buildIndex(documents: CorpusDocument[]): IndexedChunk[] {
-  return documents.flatMap((document) =>
-    chunkDocument(document).map((chunk) => ({
-      ...chunk,
-      document,
-      terms: new Set(tokenize(chunk.text)),
-    })),
-  );
+function scoreChunk(queryTerms: string[], text: string): number {
+  if (queryTerms.length === 0) return 0;
+  const terms = new Set(tokenize(text));
+  const matches = queryTerms.filter((term) => terms.has(term)).length;
+  return matches / queryTerms.length;
 }
 
-function scoreChunk(queryTerms: string[], chunk: IndexedChunk): number {
-  if (queryTerms.length === 0) return 0;
-  const matches = queryTerms.filter((term) => chunk.terms.has(term)).length;
-  return matches / queryTerms.length;
+function retainTopChunks(candidates: ScoredChunk[], candidate: ScoredChunk, topK: number): void {
+  let index = 0;
+  while (index < candidates.length && candidates[index]!.score >= candidate.score) index++;
+  candidates.splice(index, 0, candidate);
+  if (candidates.length > topK) candidates.pop();
 }
 
 export class LocalDocumentRetriever implements DocumentRetriever {
   readonly strategy = "official-corpus-keyword";
-  private readonly documentCount: number;
-  private readonly index: IndexedChunk[];
-
-  constructor() {
-    const documents = loadCorpusDocuments();
-    this.documentCount = documents.length;
-    this.index = buildIndex(documents);
-  }
 
   async retrieve(query: string, topK = 4): Promise<RetrievalOutcome> {
     const queryTerms = tokenize(query);
-    const scored = this.index
-      .map((chunk) => ({ chunk, score: scoreChunk(queryTerms, chunk) }))
-      .sort((a, b) => b.score - a.score);
-    const selected = scored.some((item) => item.score > 0)
-      ? scored.filter((item) => item.score > 0).slice(0, topK)
-      : scored.slice(0, topK);
-    const documents: RetrievedDocument[] = selected.map(({ chunk, score }) => ({
+    const matching: ScoredChunk[] = [];
+    const fallback: ScoredChunk[] = [];
+    let documentCount = 0;
+
+    for await (const document of iterateCorpusDocuments()) {
+      documentCount++;
+      for (const chunk of iterateDocumentChunks(document)) {
+        const score = scoreChunk(queryTerms, chunk.text);
+        if (score > 0 && topK > 0) {
+          retainTopChunks(matching, { ...chunk, document, score }, topK);
+        } else if (fallback.length < topK) {
+          fallback.push({ ...chunk, document, score });
+        }
+      }
+    }
+
+    const selected = matching.length > 0 ? matching : fallback;
+    const documents: RetrievedDocument[] = selected.map((chunk) => ({
       id: chunk.chunkId,
       title: chunk.document.title,
       content: chunk.text,
       url: chunk.document.url,
-      score,
+      score: chunk.score,
     }));
     return {
       documents,
-      documentsSearched: this.documentCount,
+      documentsSearched: documentCount,
       strategy: this.strategy,
     };
   }

@@ -1,4 +1,4 @@
-import { loadCorpusDocuments } from "@/server/ingestion/corpus";
+import { iterateCorpusDocuments } from "@/server/ingestion/corpus";
 import type {
   GraphEntity,
   GraphNodeFact,
@@ -11,7 +11,6 @@ type CorpusEvent = {
   docId: string;
   title: string;
   url: string;
-  text: string;
   event: string;
   games: string;
   venue: string;
@@ -36,46 +35,39 @@ function terms(value: string): string[] {
 
 function matchScore(name: string, searchableText: string): number {
   const normalizedName = name.toLowerCase().trim();
-  const normalizedText = searchableText.toLowerCase();
-  if (normalizedName && normalizedText.includes(normalizedName)) return 1;
+  if (normalizedName && searchableText.includes(normalizedName)) return 1;
   const queryTerms = terms(normalizedName);
   if (queryTerms.length === 0) return 0;
-  return queryTerms.filter((term) => normalizedText.includes(term)).length / queryTerms.length;
-}
-
-function loadCorpusEvents(): CorpusEvent[] {
-  return loadCorpusDocuments().map((document) => ({
-    docId: document.docId,
-    title: document.title,
-    url: document.url,
-    text: document.text,
-    event: readInfoboxField(document.text, "event") || document.title,
-    games: readInfoboxField(document.text, "games"),
-    venue: readInfoboxField(document.text, "venue"),
-    date: readInfoboxField(document.text, "date") || readInfoboxField(document.text, "dates"),
-  }));
+  return queryTerms.filter((term) => searchableText.includes(term)).length / queryTerms.length;
 }
 
 export class LocalCorpusGraphRetriever implements GraphRetriever {
   readonly strategy = "local-corpus-event-graph";
-  private readonly events = loadCorpusEvents();
 
   async retrieve(entities: GraphEntity[], depth: number): Promise<GraphRetrievalOutcome> {
-    const matches = this.events
-      .map((event) => ({
-        event,
-        score: Math.max(
-          ...entities.map((entity) =>
-            matchScore(
-              entity.name,
-              `${event.title} ${event.event} ${event.games} ${event.venue} ${event.text}`,
-            ),
-          ),
-        ),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 4);
+    const matches: Array<{ event: CorpusEvent; score: number }> = [];
+    for await (const document of iterateCorpusDocuments()) {
+      const event: CorpusEvent = {
+        docId: document.docId,
+        title: document.title,
+        url: document.url,
+        event: readInfoboxField(document.text, "event") || document.title,
+        games: readInfoboxField(document.text, "games"),
+        venue: readInfoboxField(document.text, "venue"),
+        date: readInfoboxField(document.text, "date") || readInfoboxField(document.text, "dates"),
+      };
+      const searchableText =
+        `${event.title} ${event.event} ${event.games} ${event.venue} ${document.text}`.toLowerCase();
+      const score = Math.max(
+        ...entities.map((entity) => matchScore(entity.name, searchableText)),
+      );
+      if (score <= 0) continue;
+
+      let index = 0;
+      while (index < matches.length && matches[index]!.score >= score) index++;
+      matches.splice(index, 0, { event, score });
+      if (matches.length > 4) matches.pop();
+    }
 
     const nodes = new Map<string, GraphNodeFact>();
     const relationships: GraphRelationshipFact[] = [];

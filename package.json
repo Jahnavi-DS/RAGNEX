@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
+    "benchmark:hidden": "tsx scripts/benchmark-hidden-questions.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "check:tigergraph": "tsx --env-file=.env scripts/check-tigergraph.ts"
