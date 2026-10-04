@@ -1,50 +1,93 @@
-# RAGNEX
+# RAGNEX — From Retrieval to Autonomous Investigation
 
-From Retrieval to Autonomous Investigation — compare traditional RAG, GraphRAG, and Agentic GraphRAG workflows side by side.
+> **RAG retrieves. GraphRAG connects. Agentic GraphRAG investigates.**
 
-## Development
+RAGNEX is an Agentic GraphRAG system built for the **TigerGraph Agentic GraphRAG Hackathon 2026**.
 
-You need Node.js (or Bun) installed.
+The project compares three approaches — **RAG, GraphRAG, and Agentic GraphRAG** — to understand when simple retrieval is sufficient, when graph relationships provide additional value, and when autonomous investigation is useful.
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
-```
+---
 
-## Scripts
+## 🚀 Project Overview
 
-- `npm run dev` — start the local dev server
-- `npm run build` — production build
-- `npm run preview` — preview the production build
-- `npm run lint` — run lint checks
-- `npm run format` — format the codebase
+RAGNEX allows the same question to be investigated using three different approaches:
 
-## Hidden evaluation benchmark
+### 1. RAG — Retrieves
 
-The 50 evaluation questions are stored in `data/questions/eval_hidden.jsonl`.
-Real generated results are not committed. To run all 50 questions sequentially
-against the configured Groq and TigerGraph integrations and write
-`benchmark-results/hidden-questions-results.json`, explicitly run:
+Traditional Retrieval-Augmented Generation retrieves relevant information from the local Olympic document corpus and generates an answer using the retrieved context.
 
-```sh
-npm run benchmark:hidden -- --run
-```
+### 2. GraphRAG — Connects
 
-This makes real backend requests and may take time or consume API quota. For a
-small opt-in run, pass `--limit 1` (or another positive count up to 50). The
-runner does not load `.env` itself; configure credentials through the normal
-environment before starting it. Existing result files are not overwritten
-unless `--overwrite` is also passed. Each output record includes the dataset
-question ID and type, actual answers (or `null` when an approach returns an
-error), token counts and latency as reported by the approach, approach
-statuses, and the Agentic GraphRAG trace. Unavailable measurements remain
-`null`.
+GraphRAG uses **TigerGraph Savanna** to connect structured information such as:
 
-## Built with
+- Olympic Events
+- Olympic Games
+- Venues
+- Documents
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+The graph allows the system to retrieve connected evidence and reason over relationships.
+
+### 3. Agentic GraphRAG — Investigates
+
+Agentic GraphRAG performs an adaptive investigation using multiple tools.
+
+The agent can:
+
+- Extract entities
+- Search documents
+- Search the graph
+- Traverse graph relationships
+- Evaluate evidence
+- Decide whether additional investigation is required
+- Stop when sufficient evidence is available
+
+---
+
+## 🎯 Core Research Question
+
+> **When is RAG enough, when does graph reasoning help, and when is autonomous investigation actually useful?**
+
+RAGNEX does not assume that Agentic GraphRAG is always better.
+
+Instead, it provides a workspace to compare the three approaches using retrieval evidence, graph evidence, investigation steps, latency, token usage, and execution traces.
+
+---
+
+## 🏗️ Architecture
+
+```text
+                         ┌─────────────────────┐
+                         │     User Question   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ RAGNEX Investigation│
+                         │      Interface      │
+                         └──────────┬──────────┘
+                                    │
+                 ┌──────────────────┼──────────────────┐
+                 │                  │                  │
+                 ▼                  ▼                  ▼
+          ┌────────────┐     ┌────────────┐    ┌─────────────────┐
+          │    RAG     │     │  GraphRAG  │    │ Agentic GraphRAG│
+          └─────┬──────┘     └──────┬─────┘    └────────┬────────┘
+                │                   │                   │
+                ▼                   ▼                   ▼
+        Local Document       TigerGraph Graph      Agent Tools
+           Corpus                 │                   │
+                                  │          ┌────────┼─────────┐
+                                  │          │        │         │
+                                  ▼          ▼        ▼         ▼
+                            Graph Evidence  Search  Traverse  Evaluate
+                                  │
+                                  └──────────┬──────────────┘
+                                             ▼
+                                      Evidence Aggregation
+                                             │
+                                             ▼
+                                        Final Answer
+                                             │
+                                             ▼
+                                   Metrics + Investigation
+                                         Trace
